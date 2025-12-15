@@ -1,6 +1,6 @@
 // src/pages/TrainersPage.jsx
 import { useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext"; // שים לב לנתיב ../
+import { useAuth } from "./context/AuthContext";
 
 const MOCK_TRAINERS = [
   {
