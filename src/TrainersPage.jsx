@@ -1,30 +1,9 @@
 // src/pages/TrainersPage.jsx
 import { useEffect, useState } from "react";
-import { useAuth } from "./context/AuthContext";
+import { useAuth } from "../context/AuthContext";
 
-const MOCK_TRAINERS = [
-  {
-    id: "t1",
-    name: "דני כושר",
-    bio: "מאמן כושר אישי עם התמחות בירידה במשקל.",
-    specialties: ["ירידה במשקל", "אימון פונקציונלי"],
-    experienceYears: 5,
-  },
-  {
-    id: "t2",
-    name: "אורית HIIT",
-    bio: "אימוני HIIT אינטנסיביים לשיפור הכושר.",
-    specialties: ["HIIT", "סיבולת לב ריאה"],
-    experienceYears: 3,
-  },
-  {
-    id: "t3",
-    name: "יואב כוח",
-    bio: "התמקדות בבניית מסת שריר וחיזוק כללי.",
-    specialties: ["אימון כוח", "מסת שריר"],
-    experienceYears: 7,
-  },
-];
+// אם השרת שלך בפורט אחר, שנה פה:
+const API_BASE = "http://localhost:3000";
 
 function TrainersPage() {
   const { user } = useAuth();
@@ -32,8 +11,11 @@ function TrainersPage() {
 
   const [trainers, setTrainers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
 
   const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     bio: "",
@@ -41,52 +23,84 @@ function TrainersPage() {
     experienceYears: "",
   });
 
-  // כרגע עובדים עם דאטה זמני; בעתיד זה יהיה fetch לשרת
+  const fetchTrainers = async () => {
+    setLoading(true);
+    setPageError("");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/trainers`);
+      const data = await res.json();
+
+      // תומך גם במבנה {success:true, trainers:[...]} וגם במערך ישיר
+      const list = Array.isArray(data) ? data : data.trainers;
+
+      setTrainers(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error(err);
+      setPageError("שגיאה בטעינת מאמנים מהשרת");
+      setTrainers([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    setTrainers(MOCK_TRAINERS);
-    setLoading(false);
+    fetchTrainers();
   }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAddTrainer = (e) => {
+  const handleAddTrainer = async (e) => {
     e.preventDefault();
+    setSaving(true);
 
-    const newTrainer = {
-      id: Date.now().toString(),
-      name: formData.name,
-      bio: formData.bio,
-      specialties: formData.specialties
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-      experienceYears: Number(formData.experienceYears) || 0,
-    };
+    try {
+      const payload = {
+        name: formData.name.trim(),
+        bio: formData.bio.trim(),
+        specialties: formData.specialties
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        experienceYears: Number(formData.experienceYears) || 0,
+      };
 
-    setTrainers((prev) => [...prev, newTrainer]);
+      const res = await fetch(`${API_BASE}/api/trainers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // חשוב אם השרת משתמש ב-cookie JWT
+        body: JSON.stringify(payload),
+      });
 
-    // ניקוי הטופס וסגירתו
-    setFormData({
-      name: "",
-      bio: "",
-      specialties: "",
-      experienceYears: "",
-    });
-    setShowForm(false);
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data?.message || "Failed to create trainer");
+        return;
+      }
+
+      // תומך גם ב {trainer: {...}} וגם במקרה שמחזיר את המאמן ישירות
+      const created = data.trainer || data;
+
+      // עדכון UI (וגם אפשר במקום זה לקרוא fetchTrainers())
+      setTrainers((prev) => [...prev, created]);
+
+      // ניקוי הטופס וסגירה
+      setFormData({ name: "", bio: "", specialties: "", experienceYears: "" });
+      setShowForm(false);
+    } catch (err) {
+      console.error(err);
+      alert("Network error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
     return <div className="page trainers-page">טוען מאמנים...</div>;
-  }
-
-  if (trainers.length === 0) {
-    return <div className="page trainers-page">לא נמצאו מאמנים.</div>;
   }
 
   return (
@@ -96,18 +110,25 @@ function TrainersPage() {
         בחר מאמן כדי לראות את האימונים שהוא מעביר ולהירשם אליהם.
       </p>
 
+      {pageError && (
+        <div style={{ padding: "10px", border: "1px solid #f99", marginBottom: "15px" }}>
+          {pageError}
+        </div>
+      )}
+
       {/* רק למנהל תוצג האפשרות להוסיף מאמן */}
       {isAdmin && (
-        <div className="add-trainer-box">
+        <div className="add-trainer-box" style={{ marginBottom: "15px" }}>
           <button
             className="primary-button"
             onClick={() => setShowForm((prev) => !prev)}
+            disabled={saving}
           >
             {showForm ? "סגור טופס הוספת מאמן" : "הוסף מאמן חדש"}
           </button>
 
           {showForm && (
-            <form className="add-trainer-form" onSubmit={handleAddTrainer}>
+            <form className="add-trainer-form" onSubmit={handleAddTrainer} style={{ marginTop: "10px" }}>
               <div className="form-group">
                 <label>שם המאמן:</label>
                 <input
@@ -151,43 +172,45 @@ function TrainersPage() {
                 />
               </div>
 
-              <button type="submit" className="primary-button">
-                שמור מאמן
+              <button type="submit" className="primary-button" disabled={saving}>
+                {saving ? "שומר..." : "שמור מאמן"}
               </button>
             </form>
           )}
         </div>
       )}
 
-      <div className="trainers-grid">
-        {trainers.map((trainer) => (
-          <div key={trainer.id} className="trainer-card">
-            <h2 className="trainer-name">{trainer.name}</h2>
-            <p className="trainer-bio">{trainer.bio}</p>
+      {trainers.length === 0 ? (
+        <div className="page trainers-page">לא נמצאו מאמנים.</div>
+      ) : (
+        <div className="trainers-grid">
+          {trainers.map((trainer) => (
+            <div key={trainer._id || trainer.id} className="trainer-card">
+              <h2 className="trainer-name">{trainer.name}</h2>
+              <p className="trainer-bio">{trainer.bio}</p>
 
-            <p className="trainer-experience">
-              ניסיון: {trainer.experienceYears} שנים
-            </p>
+              <p className="trainer-experience">
+                ניסיון: {trainer.experienceYears ?? 0} שנים
+              </p>
 
-            <div className="trainer-specialties">
-              {trainer.specialties.map((spec) => (
-                <span key={spec} className="badge">
-                  {spec}
-                </span>
-              ))}
+              <div className="trainer-specialties">
+                {(trainer.specialties || []).map((spec) => (
+                  <span key={spec} className="badge">
+                    {spec}
+                  </span>
+                ))}
+              </div>
+
+              <button
+                className="primary-button"
+                onClick={() => alert(`בעתיד: מעבר לאימונים של ${trainer.name}`)}
+              >
+                צפה באימונים של המאמן
+              </button>
             </div>
-
-            <button
-              className="primary-button"
-              onClick={() => {
-                alert(`בעתיד: מעבר לאימונים של ${trainer.name}`);
-              }}
-            >
-              צפה באימונים של המאמן
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
